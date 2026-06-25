@@ -24,7 +24,7 @@ export const env = Object.freeze({
     creator: str(process.env.APP_CREATOR, "lukscode"),
     github: str(process.env.APP_GITHUB, "https://github.com/lukscode-py"),
     channel: str(process.env.APP_CHANNEL, "@vixzap"),
-    port: int(process.env.APP_PORT, 3333),
+    port: int(process.env.PORT, int(process.env.APP_PORT, 3333)),
     baseUrl: str(process.env.APP_BASE_URL, "http://localhost:3333")
   },
 

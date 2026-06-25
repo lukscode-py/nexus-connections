@@ -10,9 +10,10 @@
   },
   "scripts": {
     "dev": "node --env-file=.env.development src/server.js",
-    "start": "node --env-file=.env.production src/server.js",
+    "start": "node src/server.js",
     "check": "node scripts/check.mjs",
-    "smoke": "node --env-file=.env.development scripts/smoke.mjs"
+    "smoke": "node --env-file=.env.development scripts/smoke.mjs",
+    "start:local": "node --env-file=.env.production src/server.js"
   },
   "keywords": [
     "whatsapp",
