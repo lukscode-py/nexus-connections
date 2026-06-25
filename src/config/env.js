@@ -1,8 +1,8 @@
 import path from "node:path";
 
-function bool(value, fallback = false) {
-  if (value === undefined || value === null || value === "") return fallback;
-  return String(value).toLowerCase() === "true";
+function str(value, fallback) {
+  const clean = String(value || "").trim();
+  return clean || fallback;
 }
 
 function int(value, fallback) {
@@ -10,13 +10,35 @@ function int(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function str(value, fallback = "") {
-  return value === undefined || value === null || value === "" ? fallback : String(value);
+function bool(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
-export const env = Object.freeze({
+function isReadonlyServerlessRuntime() {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.LAMBDA_TASK_ROOT ||
+      process.cwd().startsWith("/var/task")
+  );
+}
+
+const readonlyServerless = isReadonlyServerlessRuntime();
+
+const defaultDataDir = readonlyServerless
+  ? "/tmp/nexus-connections/data"
+  : "./var/data";
+
+const defaultTmpDir = readonlyServerless
+  ? "/tmp/nexus-connections/tmp"
+  : "./var/tmp";
+
+export const env = {
   nodeEnv: str(process.env.NODE_ENV, "development"),
   isProduction: str(process.env.NODE_ENV, "development") === "production",
+  isVercel: Boolean(process.env.VERCEL),
+  isReadonlyServerless: readonlyServerless,
 
   app: {
     name: str(process.env.APP_NAME, "Nexus Connections"),
@@ -24,21 +46,13 @@ export const env = Object.freeze({
     creator: str(process.env.APP_CREATOR, "lukscode"),
     github: str(process.env.APP_GITHUB, "https://github.com/lukscode-py"),
     channel: str(process.env.APP_CHANNEL, "@vixzap"),
-    port: int(process.env.PORT, int(process.env.APP_PORT, 3333)),
-    baseUrl: str(process.env.APP_BASE_URL, "http://localhost:3333")
+    baseUrl: str(process.env.APP_BASE_URL, "http://localhost:3333"),
+    port: int(process.env.PORT, int(process.env.APP_PORT, 3333))
   },
 
   paths: {
-    dataDir: path.resolve(
-      process.env.VERCEL
-        ? str(process.env.NC_DATA_DIR, "/tmp/nexus-connections/data")
-        : str(process.env.NC_DATA_DIR, "./var/data")
-    ),
-    tmpDir: path.resolve(
-      process.env.VERCEL
-        ? str(process.env.NC_TMP_DIR, "/tmp/nexus-connections/tmp")
-        : str(process.env.NC_TMP_DIR, "./var/tmp")
-    )
+    dataDir: path.resolve(str(process.env.NC_DATA_DIR, defaultDataDir)),
+    tmpDir: path.resolve(str(process.env.NC_TMP_DIR, defaultTmpDir))
   },
 
   session: {
@@ -55,11 +69,9 @@ export const env = Object.freeze({
     errorLimit: int(process.env.NC_RATE_ERROR_LIMIT, 5),
     errorWindowSeconds: int(process.env.NC_RATE_ERROR_WINDOW_SECONDS, 360),
     errorBlockSeconds: int(process.env.NC_RATE_ERROR_BLOCK_SECONDS, 900),
-
     fastLimit: int(process.env.NC_RATE_FAST_LIMIT, 5),
     fastWindowSeconds: int(process.env.NC_RATE_FAST_WINDOW_SECONDS, 30),
     fastBlockSeconds: int(process.env.NC_RATE_FAST_BLOCK_SECONDS, 1800),
-
     phoneLimit: int(process.env.NC_RATE_PHONE_LIMIT, 3),
     phoneWindowSeconds: int(process.env.NC_RATE_PHONE_WINDOW_SECONDS, 600),
     phoneBlockSeconds: int(process.env.NC_RATE_PHONE_BLOCK_SECONDS, 1800)
@@ -69,4 +81,4 @@ export const env = Object.freeze({
     jsonLimit: str(process.env.NC_JSON_LIMIT, "32kb"),
     trustProxy: bool(process.env.NC_TRUST_PROXY, false)
   }
-});
+};
