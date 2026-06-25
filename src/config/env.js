@@ -29,8 +29,16 @@ export const env = Object.freeze({
   },
 
   paths: {
-    dataDir: path.resolve(str(process.env.NC_DATA_DIR, "./var/data")),
-    tmpDir: path.resolve(str(process.env.NC_TMP_DIR, "./var/tmp"))
+    dataDir: path.resolve(
+      process.env.VERCEL
+        ? str(process.env.NC_DATA_DIR, "/tmp/nexus-connections/data")
+        : str(process.env.NC_DATA_DIR, "./var/data")
+    ),
+    tmpDir: path.resolve(
+      process.env.VERCEL
+        ? str(process.env.NC_TMP_DIR, "/tmp/nexus-connections/tmp")
+        : str(process.env.NC_TMP_DIR, "./var/tmp")
+    )
   },
 
   session: {
