@@ -2,8 +2,11 @@ import { env } from "../config/env.js";
 import { listSessions, finalizeSession, updateSession, removeSessionFiles } from "./session-store.js";
 import { SESSION_STATUS } from "./session-state.js";
 import { now, isExpired } from "../utils/time.js";
+import { cleanupExpiredQueue } from "./queue-store.js";
 
 export async function cleanupExpiredSessions() {
+  await cleanupExpiredQueue();
+
   const sessions = await listSessions();
 
   for (const [id, session] of Object.entries(sessions)) {

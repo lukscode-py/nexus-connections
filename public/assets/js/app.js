@@ -13,6 +13,9 @@ const state = {
   session: null,
   eventSource: null,
   countdownTimer: null,
+  queueTimer: null,
+  queueTicketId: null,
+  queue: null,
   creating: false,
   downloadTriggered: false,
   uptimeBaseSeconds: 0,
@@ -36,8 +39,13 @@ function icon(name) {
   const icons = {
     back: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 5.3a1 1 0 0 1 0 1.4L10.41 11H19a1 1 0 1 1 0 2h-8.59l4.3 4.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.41 0Z"></path></svg>',
     close: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.59 12l-5.3 5.3a1 1 0 1 0 1.42 1.4L12 13.41l5.3 5.3a1 1 0 0 0 1.4-1.42L13.41 12l5.3-5.3a1 1 0 0 0-1.42-1.4L12 10.59 6.7 5.3Z"></path></svg>',
-    qr: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4V4Zm2 2v2h2V6H6Zm8-2h6v6h-6V4Zm2 2v2h2V6h-2ZM4 14h6v6H4v-6Zm2 2v2h2v-2H6Zm9-2h2v2h-2v-2Zm2 2h3v2h-2v2h-2v-3h1v-1Zm-4 1h2v3h-2v-3Zm6-4h1v2h-3v-2h2Zm-6 0h2v2h-2v-2Z"></path></svg>',
-    pair: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 3v14h10V5H7Zm3 11h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2Zm2-9a3 3 0 0 1 3 3c0 1.3-.84 2.4-2 2.82V14h-2v-2.9h1a1.1 1.1 0 1 0-1.1-1.1h-2A3.1 3.1 0 0 1 12 7Z"></path></svg>'
+    qr: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4V4Zm2 2v3h3V6H6Zm7-2h7v7h-7V4Zm2 2v3h3V6h-3ZM4 13h7v7H4v-7Zm2 2v3h3v-3H6Zm9-2h2v2h-2v-2Zm2 2h3v2h-2v3h-3v-2h1v-2h1v-1Zm-4 2h2v3h-2v-3Zm6-4h1v2h-3v-2h2Z"></path></svg>',
+    pair: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3Zm0 3v14h8V5H8Zm2 11h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2Zm2-9a3 3 0 0 1 3 3c0 1.2-.7 2.24-1.72 2.72-.2.1-.28.18-.28.4V14h-2v-.88c0-1.08.6-1.72 1.38-2.08A1.13 1.13 0 0 0 13 10a1 1 0 0 0-2 0H9a3 3 0 0 1 3-3Z"></path></svg>',
+    bolt: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 10-13h-7l1-7Z"></path></svg>',
+    shield: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4.5 5v6.2c0 4.7 3.1 8.9 7.5 10.8 4.4-1.9 7.5-6.1 7.5-10.8V5L12 2Zm3.7 7.7-4.4 4.4-2-2 1.4-1.4.6.6 3-3 1.4 1.4Z"></path></svg>',
+    download: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v9l3.3-3.3 1.4 1.4L12 15.8l-5.7-5.7 1.4-1.4L11 12V3ZM5 19h14v2H5v-2Z"></path></svg>',
+    copy: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h1V7Zm3-1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-6ZM7 10a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1h-3a3 3 0 0 1-3-3v-3H7Z"></path></svg>',
+    check: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 16.2-3.4-3.4-1.4 1.4 4.8 4.8L20 8.2l-1.4-1.4-9.4 9.4Z"></path></svg>'
   };
 
   return icons[name] || "";
@@ -196,10 +204,20 @@ function closeEvents() {
   }
 }
 
+function clearQueuePolling() {
+  if (state.queueTimer) {
+    clearInterval(state.queueTimer);
+    state.queueTimer = null;
+  }
+}
+
 function resetConnection() {
   closeEvents();
   stopCountdown();
+  clearQueuePolling();
 
+  state.queueTicketId = null;
+  state.queue = null;
   state.sessionId = null;
   state.eventUrl = null;
   state.session = null;
@@ -216,6 +234,12 @@ async function cancelAndBack() {
         method: "POST"
       });
     }
+
+    if (state.queueTicketId) {
+      await fetch(`/api/queue/${state.queueTicketId}`, {
+        method: "DELETE"
+      });
+    }
   } catch {
     // não bloquear navegação
   }
@@ -228,41 +252,60 @@ function renderHome() {
   setStatus("Pronto para iniciar");
 
   view.innerHTML = `
-    <div class="hero-layout">
-      <div class="hero-card">
-        <h1>Conecte seu bot de forma simples com a Nexus Connections.</h1>
+    <div class="hero-pro">
+      <div class="hero-main">
+        <span class="eyebrow">Nexus Connections</span>
+        <h1>Gere sessões do WhatsApp de forma simples, rápida e segura.</h1>
         <p>
-          Escolha o tipo de conexão, conecte no WhatsApp e baixe sua sessão
-          pronta para usar no seu projeto.
+          Escolha QR Code ou Pair Code, conecte no WhatsApp e baixe o arquivo
+          de sessão direto pelo site.
         </p>
 
-        <div class="cta-row">
-          <button class="primary-btn" id="goChoiceBtn" type="button">Começar</button>
+        <div class="hero-actions">
+          <button class="primary-btn big" id="goChoiceBtn" type="button">
+            ${icon("bolt")}
+            Iniciar conexão
+          </button>
+          <span class="mini-note">Modo atual: sessão temporária com download expiráveis.</span>
         </div>
       </div>
 
-      <div class="hero-side">
-        <div class="info-card">
-          <h3>Como funciona</h3>
-          <p>
-            Escolha entre QR Code ou código por número. Depois conecte pelo
-            WhatsApp e siga para o download.
-          </p>
+      <div class="hero-console">
+        <div class="console-top">
+          <span></span><span></span><span></span>
         </div>
-
-        <div class="info-card">
-          <h3>Open source</h3>
-          <p>
-            O projeto Nexus Connections é aberto e pode ser adaptado, estudado
-            e evoluído conforme a sua necessidade.
-          </p>
+        <div class="console-line">
+          <small>status</small>
+          <strong>online</strong>
         </div>
-
-        <div class="info-card uptime-card">
-          <h3>Uptime</h3>
+        <div class="console-line">
+          <small>uptime</small>
           <strong id="uptimeLive">${formatUptime(getLiveUptimeSeconds())}</strong>
-          <p>Tempo desde a última inicialização do servidor.</p>
         </div>
+        <div class="console-line">
+          <small>export</small>
+          <strong>zip session</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="feature-icon">${icon("qr")}</span>
+        <strong>QR Code</strong>
+        <p>Conecte escaneando o código no WhatsApp.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">${icon("pair")}</span>
+        <strong>Pair Code</strong>
+        <p>Use um número para gerar código de pareamento.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">${icon("shield")}</span>
+        <strong>Download seguro</strong>
+        <p>Crie suas sessões de forma simples e com segurança.</p>
       </div>
     </div>
   `;
@@ -273,58 +316,88 @@ function renderHome() {
 function renderChoice() {
   setStatus("Escolha como deseja conectar");
 
+  const isQr = state.method === "qr";
+
   view.innerHTML = `
-    <div class="route-head">
+    <div class="route-head compact">
       <button class="icon-control" id="backHomeBtn" type="button" aria-label="Voltar para o início">${icon("back")}</button>
       <div>
-        <h2>Escolha de conexão</h2>
-        <p class="helper-text">Selecione a opção que deseja usar para conectar.</p>
+        <span class="eyebrow">Método de conexão</span>
+        <h2>Escolha o modo de pareamento</h2>
+        <p class="helper-text">Você pode alternar entre QR Code e Pair Code antes de iniciar.</p>
       </div>
     </div>
 
-    <div class="choice-grid">
-      <button class="choice-card ${state.method === "qr" ? "active" : ""}" id="pickQrBtn" type="button">
-        <span class="choice-icon">${icon("qr")}</span>
-        <strong>QR Code</strong>
-        <small>Escaneie o código pelo WhatsApp em outro aparelho.</small>
+    <div class="method-tabs" role="tablist" aria-label="Métodos de conexão">
+      <button class="method-tab ${isQr ? "active" : ""}" id="pickQrBtn" type="button">
+        ${icon("qr")}
+        <span>
+          <strong>QR Code</strong>
+          <small>Escanear com o WhatsApp</small>
+        </span>
       </button>
 
-      <button class="choice-card ${state.method === "pair" ? "active" : ""}" id="pickPairBtn" type="button">
-        <span class="choice-icon">${icon("pair")}</span>
-        <strong>Código por número</strong>
-        <small>Receba um código e conecte usando o seu número.</small>
+      <button class="method-tab ${!isQr ? "active" : ""}" id="pickPairBtn" type="button">
+        ${icon("pair")}
+        <span>
+          <strong>Pair Code</strong>
+          <small>Gerar código pelo número</small>
+        </span>
       </button>
     </div>
 
-    <div class="panel-card spacer-top">
-      <h3>${state.method === "qr" ? "QR Code selecionado" : "Código por número selecionado"}</h3>
+    <div class="notice-card">
+      <strong>Aviso de compatibilidade</strong>
       <p>
-        ${state.method === "qr"
-          ? "Ao continuar, o QR Code será gerado e mostrado na próxima etapa."
-          : "Digite seu número com código do país para gerar o código de conexão."}
+        Alguns bots podem não ser compatíveis com sessões geradas por este método.
+        Isso depende da base do próprio bot e não pode ser corrigido pela aplicação.
+        Se o seu bot não conectar mesmo seguindo todos os passos, verifique a compatibilidade
+        da sua base antes de considerar erro no sistema.
       </p>
+    </div>
 
-      ${state.method === "pair" ? `
-        <div class="form-block">
-          <label for="phoneInput">Número do WhatsApp</label>
-          <input
-            id="phoneInput"
-            class="text-input"
-            inputmode="tel"
-            autocomplete="tel"
-            placeholder="+55 74 99999-9999"
-            value="${escapeHtml(state.phone)}"
-          >
+    <div class="setup-card">
+      <div class="setup-preview">
+        <div class="preview-device">
+          <div class="preview-screen">
+            <span class="preview-icon">${isQr ? icon("qr") : icon("pair")}</span>
+          </div>
         </div>
-      ` : ""}
+      </div>
 
-      <div class="cta-row">
-        <button class="primary-btn" id="continueBtn" type="button">Continuar</button>
+      <div class="setup-content">
+        <span class="eyebrow">${isQr ? "QR Code selecionado" : "Pair Code selecionado"}</span>
+        <h3>${isQr ? "Conectar escaneando o QR" : "Conectar com código por número"}</h3>
+        <p>
+          ${isQr
+            ? "Ao continuar, o site vai gerar um QR Code temporário para conectar sua sessão."
+            : "Digite o número com código do país. O site vai gerar um código para usar no WhatsApp."}
+        </p>
+
+        ${!isQr ? `
+          <div class="form-block">
+            <label for="phoneInput">Número do WhatsApp</label>
+            <input
+              id="phoneInput"
+              class="text-input"
+              inputmode="tel"
+              autocomplete="tel"
+              placeholder="+55 74 99999-9999"
+              value="${escapeHtml(state.phone)}"
+            >
+          </div>
+        ` : ""}
+
+        <button class="primary-btn full" id="continueBtn" type="button">
+          ${isQr ? icon("qr") : icon("pair")}
+          Continuar
+        </button>
       </div>
     </div>
   `;
 
   document.querySelector("#backHomeBtn").addEventListener("click", () => navigate("inicio"));
+
   document.querySelector("#pickQrBtn").addEventListener("click", () => {
     state.method = "qr";
     renderChoice();
@@ -356,6 +429,85 @@ function renderChoice() {
     await startSessionRequest();
   });
 }
+
+
+function queueMetricHtml(label, data) {
+  const current = Number(data?.current || 0);
+  const limit = Number(data?.limit || 0);
+  const position = Number(data?.position || 0);
+  const active = Number(data?.active || 0);
+  const waiting = Number(data?.waiting || 0);
+
+  return `
+    <div class="queue-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${current}/${limit}</strong>
+      <small>posição ${position || "-"} • ativos ${active} • aguardando ${waiting}</small>
+    </div>
+  `;
+}
+
+function applyQueuePayload(data) {
+  state.creating = false;
+  state.queueTicketId = data.ticketId || state.queueTicketId;
+  state.queue = data.queue || state.queue;
+  render();
+}
+
+function startSessionFromQueue(data) {
+  clearQueuePolling();
+  state.creating = false;
+  state.queue = null;
+  state.queueTicketId = null;
+  state.sessionId = data.sessionId;
+  state.eventUrl = data.eventUrl;
+  state.downloadTriggered = false;
+  openEvents(data.eventUrl);
+  render();
+}
+
+async function pollQueueTicket() {
+  if (!state.queueTicketId) return;
+
+  try {
+    const response = await fetch(`/api/queue/${state.queueTicketId}/status`);
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      clearQueuePolling();
+      state.creating = false;
+      state.queue = null;
+      state.queueTicketId = null;
+      state.session = {
+        status: "failed",
+        error: data.message || "Sua fila expirou. Tente iniciar novamente."
+      };
+      render();
+      return;
+    }
+
+    if (data.queued) {
+      applyQueuePayload(data);
+      return;
+    }
+
+    if (data.sessionId && data.eventUrl) {
+      startSessionFromQueue(data);
+    }
+  } catch {
+    setStatus("Aguardando fila...", "wait");
+  }
+}
+
+function startQueuePolling() {
+  clearQueuePolling();
+  pollQueueTicket();
+
+  state.queueTimer = setInterval(() => {
+    pollQueueTicket();
+  }, 2000);
+}
+
 
 async function startSessionRequest() {
   if (state.creating) return;
@@ -390,6 +542,15 @@ async function startSessionRequest() {
         status: "failed",
         error: data.message || "Não foi possível iniciar a conexão."
       };
+      render();
+      return;
+    }
+
+    if (data.queued) {
+      state.creating = false;
+      state.queueTicketId = data.ticketId;
+      state.queue = data.queue;
+      startQueuePolling();
       render();
       return;
     }
@@ -470,21 +631,58 @@ function openEvents(url) {
 function renderConnect() {
   const session = state.session;
 
+  if (state.queue) {
+    const queue = state.queue;
+    const remaining = Number(queue?.ticket?.remainingSeconds || 0);
+
+    setStatus("Você está na fila", "wait");
+
+    view.innerHTML = `
+      <div class="route-head compact">
+        <button class="icon-control" id="cancelBackBtn" type="button" aria-label="Cancelar e voltar">${icon("close")}</button>
+        <div>
+          <span class="eyebrow">Fila de conexão</span>
+          <h2>Aguardando vaga disponível</h2>
+          <p class="helper-text">A conexão será iniciada automaticamente quando chegar sua vez.</p>
+        </div>
+      </div>
+
+      <div class="state-card queue-box">
+        <div class="loader-ring" aria-hidden="true"></div>
+        <h3>Você está na fila</h3>
+        <p>Não feche esta página. A tentativa sai da fila automaticamente ao expirar.</p>
+
+        <div class="queue-grid">
+          ${queueMetricHtml("Fila global", queue.global)}
+          ${queueMetricHtml("Fila por IP", queue.ip)}
+        </div>
+
+        <span class="countdown-chip">Sai da fila em <span id="queueCountdown">00:00</span></span>
+      </div>
+    `;
+
+    document.querySelector("#cancelBackBtn").addEventListener("click", cancelAndBack);
+    startCountdown(remaining, "queueCountdown");
+    return;
+  }
+
   if (state.creating) {
     setStatus("Criando conexão...", "wait");
 
     view.innerHTML = `
-      <div class="route-head">
+      <div class="route-head compact">
         <button class="icon-control" id="cancelBackBtn" type="button" aria-label="Cancelar e voltar">${icon("close")}</button>
         <div>
-          <h2>Conectar</h2>
-          <p class="helper-text">Preparando a sua conexão...</p>
+          <span class="eyebrow">Preparando</span>
+          <h2>Iniciando conexão</h2>
+          <p class="helper-text">Aguarde enquanto abrimos uma sessão temporária.</p>
         </div>
       </div>
 
-      <div class="connect-box">
-        <h3>Aguarde</h3>
-        <p>A Nexus Connections está iniciando a sua conexão agora.</p>
+      <div class="state-card">
+        <div class="loader-ring" aria-hidden="true"></div>
+        <h3>Preparando ambiente</h3>
+        <p>A Nexus Connections está criando sua conexão agora.</p>
       </div>
     `;
 
@@ -496,17 +694,19 @@ function renderConnect() {
     setStatus("Preparando conexão...", "wait");
 
     view.innerHTML = `
-      <div class="route-head">
+      <div class="route-head compact">
         <button class="icon-control" id="cancelBackBtn" type="button" aria-label="Cancelar e voltar">${icon("close")}</button>
         <div>
-          <h2>Conectar</h2>
-          <p class="helper-text">Aguardando informações da conexão.</p>
+          <span class="eyebrow">Conectar</span>
+          <h2>Aguardando dados</h2>
+          <p class="helper-text">Estamos preparando a próxima etapa.</p>
         </div>
       </div>
 
-      <div class="connect-box">
+      <div class="state-card">
+        <div class="loader-ring" aria-hidden="true"></div>
         <h3>Aguarde</h3>
-        <p>Estamos preparando a próxima etapa.</p>
+        <p>Recebendo informações da conexão.</p>
       </div>
     `;
 
@@ -520,16 +720,16 @@ function renderConnect() {
     setStatus("QR Code pronto", "wait");
 
     content = `
-      <div class="connect-box">
-        <div class="qr-layout">
+      <div class="qr-card">
+        <div class="qr-frame">
           <img class="qr-image" src="${session.qrDataUrl}" alt="QR Code para conexão">
-          <div>
-            <h3>Escaneie o QR Code</h3>
-            <p>
-              Abra o WhatsApp, vá em aparelhos conectados e use a opção para conectar.
-            </p>
-            <span class="countdown-chip">Expira em <span id="connectCountdown">00:00</span></span>
-          </div>
+        </div>
+
+        <div class="qr-info">
+          <span class="eyebrow">Escaneie para conectar</span>
+          <h3>QR Code temporário</h3>
+          <p>Abra o WhatsApp, vá em aparelhos conectados e escaneie este código.</p>
+          <span class="countdown-chip">Expira em <span id="connectCountdown">00:00</span></span>
         </div>
       </div>
     `;
@@ -537,14 +737,19 @@ function renderConnect() {
     setStatus("Código pronto", "wait");
 
     content = `
-      <div class="connect-box">
+      <div class="pair-card">
+        <span class="eyebrow">Pair Code</span>
         <h3>Digite este código no WhatsApp</h3>
-        <div class="spacer-top">
-          <span class="code-chip">${escapeHtml(session.pairCode)}</span>
+
+        <div class="pair-code-wrap">
+          <strong class="pair-code">${escapeHtml(session.pairCode)}</strong>
+          <button class="secondary-btn iconed" id="copyPairBtn" type="button">
+            ${icon("copy")}
+            Copiar
+          </button>
         </div>
-        <p class="spacer-top">
-          Abra o WhatsApp, entre em aparelhos conectados e use a opção de conectar com número.
-        </p>
+
+        <p>Abra o WhatsApp, entre em aparelhos conectados e escolha conectar com número.</p>
         <span class="countdown-chip">Expira em <span id="connectCountdown">00:00</span></span>
       </div>
     `;
@@ -552,25 +757,27 @@ function renderConnect() {
     setStatus("Conectado com sucesso");
 
     content = `
-      <div class="connect-box">
+      <div class="state-card success">
+        <span class="state-icon">${icon("check")}</span>
         <h3>Conectado com sucesso</h3>
-        <p>Agora estamos preparando a sua sessão para download.</p>
+        <p>Estamos salvando e preparando sua sessão para download.</p>
       </div>
     `;
   } else if (session.status === "packing") {
     setStatus("Gerando sessão...", "wait");
 
     content = `
-      <div class="connect-box">
-        <h3>Gerando sua sessão</h3>
-        <p>Aguarde enquanto a Nexus Connections prepara o arquivo para download.</p>
+      <div class="state-card">
+        <div class="loader-ring" aria-hidden="true"></div>
+        <h3>Gerando arquivo</h3>
+        <p>Aguarde enquanto a sessão é compactada em ZIP.</p>
       </div>
     `;
   } else if (session.status === "expired") {
     setStatus("Conexão expirada", "danger");
 
     content = `
-      <div class="connect-box">
+      <div class="state-card danger">
         <h3>Conexão expirada</h3>
         <p>Essa tentativa expirou. Volte e gere uma nova conexão.</p>
       </div>
@@ -579,7 +786,7 @@ function renderConnect() {
     setStatus("Falha na conexão", "danger");
 
     content = `
-      <div class="connect-box">
+      <div class="state-card danger">
         <h3>Não foi possível concluir</h3>
         <p>${escapeHtml(session.error || "Tente novamente.")}</p>
       </div>
@@ -588,19 +795,21 @@ function renderConnect() {
     setStatus("Aguardando...", "wait");
 
     content = `
-      <div class="connect-box">
-        <h3>Aguarde</h3>
-        <p>Estamos esperando a próxima atualização da conexão.</p>
+      <div class="state-card">
+        <div class="loader-ring" aria-hidden="true"></div>
+        <h3>Aguardando atualização</h3>
+        <p>Estamos esperando a próxima resposta da conexão.</p>
       </div>
     `;
   }
 
   view.innerHTML = `
-    <div class="route-head">
+    <div class="route-head compact">
       <button class="icon-control" id="cancelBackBtn" type="button" aria-label="Cancelar e voltar">${icon("close")}</button>
       <div>
-        <h2>Conectar</h2>
-        <p class="helper-text">Use esta etapa para concluir a conexão escolhida.</p>
+        <span class="eyebrow">Conexão em andamento</span>
+        <h2>${state.method === "qr" ? "QR Code" : "Pair Code"}</h2>
+        <p class="helper-text">Conclua a etapa no WhatsApp para gerar sua sessão.</p>
       </div>
     </div>
 
@@ -608,6 +817,18 @@ function renderConnect() {
   `;
 
   document.querySelector("#cancelBackBtn").addEventListener("click", cancelAndBack);
+
+  const copyPairBtn = document.querySelector("#copyPairBtn");
+  if (copyPairBtn && session?.pairCode) {
+    copyPairBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(session.pairCode);
+        setStatus("Código copiado");
+      } catch {
+        setStatus("Não foi possível copiar automaticamente", "danger");
+      }
+    });
+  }
 
   if (
     (session.status === "waiting_qr" || session.status === "waiting_pair_code") &&
@@ -625,27 +846,37 @@ function renderDownload() {
   setStatus("Sessão pronta");
 
   view.innerHTML = `
-    <div class="route-head">
+    <div class="route-head compact">
       <button class="icon-control" id="backChoiceBtn" type="button" aria-label="Voltar">${icon("back")}</button>
       <div>
-        <h2>Download</h2>
-        <p class="helper-text">Baixe sua sessão e volte quando quiser gerar outra.</p>
+        <span class="eyebrow">Download</span>
+        <h2>Sessão pronta</h2>
+        <p class="helper-text">Baixe o ZIP e guarde em local seguro.</p>
       </div>
     </div>
 
-    <div class="download-box">
-      <h3>Baixar sessão</h3>
-      <p>
-        Sua sessão está pronta para download.
-      </p>
+    <div class="download-card">
+      <span class="download-icon">${icon("download")}</span>
+      <h3>Arquivo gerado com sucesso</h3>
+      <p>Sua sessão temporária já está pronta para download.</p>
 
       ${session?.downloadUrl ? `
-        <div class="cta-row">
-          <a class="primary-btn download-link" href="${escapeHtml(session.downloadUrl)}" download>Baixar sessão</a>
-        </div>
+        <a class="primary-btn big download-link" href="${escapeHtml(session.downloadUrl)}" download>
+          ${icon("download")}
+          Baixar sessão
+        </a>
       ` : `
         <p>O link de download ainda não apareceu.</p>
       `}
+
+      <div class="tutorial-card">
+        <strong>Como usar a sessão</strong>
+        <p>
+          Extraia o arquivo ZIP dentro da pasta de sessão do seu bot.
+          Depois confira se os arquivos extraídos ficaram no mesmo local onde o bot
+          carrega a sessão antes de iniciar.
+        </p>
+      </div>
 
       ${typeof session?.downloadExpiresIn === "number" ? `
         <span class="countdown-chip">Disponível por <span id="downloadCountdown">00:00</span></span>
@@ -657,19 +888,6 @@ function renderDownload() {
     resetConnection();
     navigate("escolha");
   });
-
-  if (session?.downloadUrl && !state.downloadTriggered) {
-    state.downloadTriggered = true;
-
-    setTimeout(() => {
-      const link = document.createElement("a");
-      link.href = session.downloadUrl;
-      link.download = session.downloadName || "session.zip";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }, 500);
-  }
 
   if (typeof session?.downloadExpiresIn === "number") {
     startCountdown(session.downloadExpiresIn, "downloadCountdown");

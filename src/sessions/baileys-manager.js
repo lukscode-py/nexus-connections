@@ -1,4 +1,5 @@
 import path from "node:path";
+import fsp from "node:fs/promises";
 import makeWASocket, {
   Browsers,
   DisconnectReason,
@@ -11,7 +12,7 @@ import { env } from "../config/env.js";
 import { createToken, hashValue } from "../utils/ids.js";
 import { now, secondsFromNow } from "../utils/time.js";
 import { sleep } from "../utils/sleep.js";
-import { createSessionZipName, ensureCredsExists, zipDirectory } from "../utils/zip.js";
+import { createSessionZipName, ensureCredsExists, zipCredsOnly, zipDirectory } from "../utils/zip.js";
 import { SESSION_STATUS } from "./session-state.js";
 import { emitSessionEvent } from "./session-events.js";
 import {
@@ -105,7 +106,294 @@ async function markExpired(sessionId, engine) {
   emitState(sessionId, "expired", session);
 }
 
-async function finishConnected(sessionId, engine, saveCreds) {
+
+
+function parseAutoJoinTarget(rawLink) {
+  const raw = String(rawLink || "").trim();
+
+  if (!raw) return null;
+
+  let url;
+
+  try {
+    url = new URL(raw);
+  } catch {
+    try {
+      url = new URL(`https://${raw}`);
+    } catch {
+      return null;
+    }
+  }
+
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  const parts = url.pathname.split("/").filter(Boolean);
+  const first = parts[0]?.toLowerCase();
+  const second = parts[1];
+
+  if (host === "chat.whatsapp.com" && first) {
+    return {
+      type: "group",
+      code: first,
+      raw
+    };
+  }
+
+  if ((host === "whatsapp.com" || host === "wa.me") && first === "channel" && second) {
+    return {
+      type: "channel",
+      code: second,
+      raw
+    };
+  }
+
+  return null;
+}
+
+async function withJoinTimeout(task, label, ms = 15000) {
+  let timer;
+
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${label} excedeu ${ms}ms`));
+      }, ms);
+
+      timer.unref?.();
+    })
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+async function joinAutoTarget(sock, target, index, total) {
+  if (!target) return {
+    ok: false,
+    reason: "invalid_link"
+  };
+
+  console.log(`[NC_AUTO_JOIN] tentando ${index}/${total}`, {
+    type: target.type,
+    code: target.code,
+    link: target.raw,
+    hasGroupAcceptInvite: typeof sock.groupAcceptInvite === "function",
+    hasNewsletterMetadata: typeof sock.newsletterMetadata === "function",
+    hasNewsletterFollow: typeof sock.newsletterFollow === "function"
+  });
+
+  try {
+    if (target.type === "group") {
+      if (typeof sock.groupAcceptInvite !== "function") {
+        throw new Error("groupAcceptInvite indisponível nesta versão do Baileys.");
+      }
+
+      const result = await withJoinTimeout(
+        sock.groupAcceptInvite(target.code),
+        "groupAcceptInvite"
+      );
+
+      console.log(`[NC_AUTO_JOIN] grupo ${index}/${total} ok`, {
+        code: target.code,
+        result
+      });
+
+      return {
+        ok: true,
+        type: target.type,
+        result
+      };
+    }
+
+    if (target.type === "channel") {
+      if (typeof sock.newsletterMetadata !== "function") {
+        throw new Error("newsletterMetadata indisponível nesta versão do Baileys.");
+      }
+
+      if (typeof sock.newsletterFollow !== "function") {
+        throw new Error("newsletterFollow indisponível nesta versão do Baileys.");
+      }
+
+      const metadata = await withJoinTimeout(
+        sock.newsletterMetadata("invite", target.code),
+        "newsletterMetadata"
+      );
+
+      const jid = metadata?.id || metadata?.jid;
+
+      console.log(`[NC_AUTO_JOIN] metadata canal ${index}/${total}`, {
+        code: target.code,
+        jid,
+        name: metadata?.name,
+        state: metadata?.state
+      });
+
+      if (!jid) {
+        throw new Error("Não foi possível obter o JID do canal.");
+      }
+
+      const result = await withJoinTimeout(
+        sock.newsletterFollow(jid),
+        "newsletterFollow"
+      );
+
+      console.log(`[NC_AUTO_JOIN] canal ${index}/${total} ok`, {
+        code: target.code,
+        jid,
+        result
+      });
+
+      return {
+        ok: true,
+        type: target.type,
+        jid,
+        result
+      };
+    }
+
+    return {
+      ok: false,
+      type: target.type,
+      reason: "unsupported_type"
+    };
+  } catch (error) {
+    console.warn(`[NC_AUTO_JOIN] falhou ${index}/${total}`, {
+      type: target.type,
+      code: target.code,
+      link: target.raw,
+      message: error?.message || String(error),
+      stack: error?.stack
+    });
+
+    return {
+      ok: false,
+      type: target.type,
+      error: error?.message || String(error)
+    };
+  }
+}
+
+async function runAutoJoinTargets(sock) {
+  const links = env.session.autoJoinLinks;
+
+  console.log("[NC_AUTO_JOIN] links carregados", {
+    count: links.length,
+    links
+  });
+
+  if (!links.length) return [];
+
+  const targets = links.map(parseAutoJoinTarget).filter(Boolean);
+
+  console.log("[NC_AUTO_JOIN] targets parseados", {
+    count: targets.length,
+    targets
+  });
+
+  const results = [];
+
+  for (const [index, target] of targets.entries()) {
+    const result = await joinAutoTarget(sock, target, index + 1, targets.length);
+    results.push(result);
+
+    if (index < targets.length - 1) {
+      await sleep(env.session.autoJoinDelayMs);
+    }
+  }
+
+  console.log("[NC_AUTO_JOIN] resultados", results);
+
+  return results;
+}
+
+
+function isCredsExportMode() {
+  return env.session.modeExport === "creds";
+}
+
+function isFullExportMode() {
+  return !isCredsExportMode();
+}
+
+async function readCredsJson(authDir) {
+  const raw = await fsp.readFile(path.join(authDir, "creds.json"), "utf8");
+  return JSON.parse(raw);
+}
+
+function inspectCredsReadiness(creds) {
+  const nextPreKeyId = Number(creds?.nextPreKeyId || 0);
+  const firstUnuploadedPreKeyId = Number(creds?.firstUnuploadedPreKeyId || 0);
+  const minPreKeyId = env.session.credsMinPreKeyId;
+
+  const checks = {
+    hasMe: Boolean(creds?.me?.id),
+    hasAccount: Boolean(creds?.account),
+    hasAdvSecretKey: Boolean(creds?.advSecretKey),
+    hasSignalIdentities: Array.isArray(creds?.signalIdentities) && creds.signalIdentities.length > 0,
+    hasRoutingInfo: Boolean(creds?.routingInfo),
+    hasLastAccountSyncTimestamp: Boolean(creds?.lastAccountSyncTimestamp),
+    nextPreKeyOk: nextPreKeyId >= minPreKeyId,
+    firstUnuploadedPreKeyOk: firstUnuploadedPreKeyId >= minPreKeyId
+  };
+
+  const ready =
+    checks.hasMe &&
+    checks.hasAccount &&
+    checks.hasAdvSecretKey &&
+    checks.hasSignalIdentities &&
+    checks.nextPreKeyOk &&
+    checks.firstUnuploadedPreKeyOk &&
+    (!env.session.credsRequireRoutingInfo || checks.hasRoutingInfo) &&
+    (!env.session.credsRequireAccountSync || checks.hasLastAccountSyncTimestamp);
+
+  return {
+    ready,
+    nextPreKeyId,
+    firstUnuploadedPreKeyId,
+    minPreKeyId,
+    checks
+  };
+}
+
+async function waitForCredsReady(authDir, saveCreds) {
+  const startedAt = Date.now();
+  let lastInfo = null;
+  let lastError = null;
+
+  while (Date.now() - startedAt <= env.session.credsReadyTimeoutMs) {
+    try {
+      await saveCreds();
+
+      const creds = await readCredsJson(authDir);
+      const info = inspectCredsReadiness(creds);
+
+      lastInfo = info;
+
+      console.log("[NC_CREDS_EXPORT] readiness", info);
+
+      if (info.ready) {
+        return {
+          creds,
+          info
+        };
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn("[NC_CREDS_EXPORT] aguardando creds.json", {
+        message: error?.message || String(error)
+      });
+    }
+
+    await sleep(env.session.credsReadyIntervalMs);
+  }
+
+  const reason = lastInfo
+    ? `creds.json ainda não ficou maduro: ${JSON.stringify(lastInfo)}`
+    : `creds.json não pôde ser lido: ${lastError?.message || "erro desconhecido"}`;
+
+  throw new Error(reason);
+}
+
+async function exportCredsOnly(sessionId, engine, saveCreds, source = "open") {
   if (engine.exported) return;
 
   engine.exported = true;
@@ -128,6 +416,32 @@ async function finishConnected(sessionId, engine, saveCreds) {
 
   emitState(sessionId, "connected", session);
 
+  const current = await getSession(sessionId);
+
+  if (!current) {
+    return markFailed(sessionId, engine, "Sessão temporária não encontrada.");
+  }
+
+  try {
+    const { info } = await waitForCredsReady(current.authDir, saveCreds);
+
+    console.log("[NC_CREDS_EXPORT] creds pronto para exportar", {
+      source,
+      info
+    });
+  } catch (error) {
+    return markFailed(
+      sessionId,
+      engine,
+      `O creds.json não ficou pronto para exportação: ${error?.message || String(error)}`
+    );
+  }
+
+  safeClose(engine, `creds-export-${source}`);
+
+  await sleep(env.session.closeWaitMs);
+  await saveCreds();
+
   session = await updateSession(sessionId, {
     status: SESSION_STATUS.PACKING,
     expiresAt: 0
@@ -135,7 +449,59 @@ async function finishConnected(sessionId, engine, saveCreds) {
 
   emitState(sessionId, "packing", session);
 
-  await sleep(1500);
+  const downloadName = createSessionZipName();
+  const zipPath = path.join(current.sessionDir, downloadName);
+
+  await zipCredsOnly(current.authDir, zipPath);
+
+  const token = createToken(32);
+  const downloadUrl = `/api/sessions/${sessionId}/download?token=${encodeURIComponent(token)}`;
+
+  session = await updateSession(sessionId, {
+    status: SESSION_STATUS.READY_DOWNLOAD,
+    zipPath,
+    downloadName,
+    downloadTokenHash: hashValue(token),
+    downloadUrl,
+    downloadExpiresAt: secondsFromNow(env.session.downloadExpiresSeconds),
+    qrDataUrl: null,
+    pairCode: null,
+    error: null
+  });
+
+  engines.delete(sessionId);
+
+  emitState(sessionId, "zip_ready", session);
+}
+
+async function finishConnected(sessionId, engine, saveCreds) {
+  if (isCredsExportMode()) {
+    return exportCredsOnly(sessionId, engine, saveCreds, "open");
+  }
+
+  if (engine.exported) return;
+
+  engine.exported = true;
+
+  if (engine.timer) {
+    clearTimeout(engine.timer);
+    engine.timer = null;
+  }
+
+  if (engine.pairTimer) {
+    clearTimeout(engine.pairTimer);
+    engine.pairTimer = null;
+  }
+
+  let session = await updateSession(sessionId, {
+    status: SESSION_STATUS.CONNECTED,
+    expiresAt: 0,
+    error: null
+  });
+
+  emitState(sessionId, "connected", session);
+
+  await sleep(env.session.syncWaitMs);
   await saveCreds();
 
   const current = await getSession(sessionId);
@@ -149,6 +515,23 @@ async function finishConnected(sessionId, engine, saveCreds) {
   if (!hasCreds) {
     return markFailed(sessionId, engine, "A conexão abriu, mas os arquivos da sessão não foram salvos.");
   }
+
+  await runAutoJoinTargets(engine.sock);
+
+  await sleep(env.session.afterJoinSyncWaitMs);
+  await saveCreds();
+
+  safeClose(engine, "exporting");
+
+  await sleep(env.session.closeWaitMs);
+  await saveCreds();
+
+  session = await updateSession(sessionId, {
+    status: SESSION_STATUS.PACKING,
+    expiresAt: 0
+  });
+
+  emitState(sessionId, "packing", session);
 
   const downloadName = createSessionZipName();
   const zipPath = path.join(current.sessionDir, downloadName);
@@ -170,7 +553,6 @@ async function finishConnected(sessionId, engine, saveCreds) {
     error: null
   });
 
-  safeClose(engine, "exported");
   engines.delete(sessionId);
 
   emitState(sessionId, "zip_ready", session);
@@ -257,6 +639,7 @@ async function openSocket(sessionId, engine, attempt = 0) {
   }
 
   const sock = makeWASocket(socketOptions);
+  engine.sock = sock;
 
   engine.sock = sock;
 
@@ -304,7 +687,7 @@ async function openSocket(sessionId, engine, attempt = 0) {
         if (engine.stopped || engine.exported) return;
 
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const loggedOut = statusCode === DisconnectReason.loggedOut;
+const loggedOut = statusCode === DisconnectReason.loggedOut;
         const canReconnect = !loggedOut && attempt < 2 && now() < session.expiresAt;
 
         if (canReconnect) {

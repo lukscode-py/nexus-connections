@@ -11,6 +11,14 @@ import {
 } from "../../sessions/session-store.js";
 import { publicSession } from "../../sessions/session-public.js";
 import {
+  canStartQueuedTicket,
+  cleanupExpiredQueue,
+  createQueueTicket,
+  getQueueStats,
+  getQueueTicket,
+  removeQueueTicket
+} from "../../sessions/queue-store.js";
+import {
   subscribeSessionEvents,
   writeSse
 } from "../../sessions/session-events.js";
@@ -41,12 +49,53 @@ function publicConfig() {
     channel: env.app.channel,
     qrExpiresSeconds: env.session.qrExpiresSeconds,
     pairExpiresSeconds: env.session.pairExpiresSeconds,
-    downloadExpiresSeconds: env.session.downloadExpiresSeconds
+    downloadExpiresSeconds: env.session.downloadExpiresSeconds,
+    queue: {
+      enabled: env.queue.enabled,
+      pollSeconds: env.queue.pollSeconds,
+      maxGlobal: env.queue.maxGlobal,
+      maxPerIp: env.queue.maxPerIp,
+      expiresSeconds: env.queue.expiresSeconds,
+      maxGlobalActive: env.session.maxGlobalActive,
+      maxActivePerIp: env.session.maxActivePerIp
+    }
   };
 }
 
 function clientHash(req) {
   return hashValue(getClientIp(req));
+}
+
+
+async function startRealSession({ method, ipHash, phone = null, phoneMasked = null }) {
+  const session = await createSession({
+    method,
+    ipHash,
+    phoneMasked
+  });
+
+  startBaileysSession({
+    session,
+    phone
+  }).catch(async () => {
+    await updateSession(session.id, {
+      status: SESSION_STATUS.FAILED,
+      error: "Falha ao iniciar conexão."
+    });
+  });
+
+  return session;
+}
+
+function sessionStartPayload(session, message = "Conexão temporária criada.") {
+  return {
+    ok: true,
+    queued: false,
+    sessionId: session.id,
+    status: session.status,
+    eventUrl: `/api/sessions/${session.id}/events`,
+    message
+  };
 }
 
 async function getAllowedSession(req, res) {
@@ -111,24 +160,6 @@ apiRouter.post("/sessions/start", async (req, res, next) => {
     }
 
     const ipHash = clientHash(req);
-    const active = await countActiveSessions(ipHash);
-
-    if (active.byIp >= env.session.maxActivePerIp) {
-      return res.status(429).json({
-        ok: false,
-        code: "active_session_exists",
-        message: "Já existe uma conexão em andamento neste acesso. Aguarde finalizar ou expirar."
-      });
-    }
-
-    if (active.global >= env.session.maxGlobalActive) {
-      return res.status(503).json({
-        ok: false,
-        code: "server_busy",
-        message: "Muitas conexões acontecendo agora. Tente novamente em alguns minutos."
-      });
-    }
-
     let phone = null;
     let phoneMasked = null;
 
@@ -157,32 +188,137 @@ apiRouter.post("/sessions/start", async (req, res, next) => {
       phoneMasked = maskPhone(phone);
     }
 
-    const session = await createSession({
+    await cleanupExpiredQueue();
+
+    const active = await countActiveSessions(ipHash);
+    const queueStats = await getQueueStats(ipHash);
+    const hasWaitingQueue = queueStats.global.waiting > 0;
+    const noGlobalSlot = active.global >= env.session.maxGlobalActive;
+    const noIpSlot = active.byIp >= env.session.maxActivePerIp;
+    const shouldQueue = env.queue.enabled && (hasWaitingQueue || noGlobalSlot || noIpSlot);
+
+    if (shouldQueue) {
+      if (queueStats.global.waiting >= env.queue.maxGlobal) {
+        return res.status(429).json({
+          ok: false,
+          queued: false,
+          code: "queue_global_full",
+          message: "A fila global está cheia. Tente novamente em alguns instantes.",
+          queue: queueStats
+        });
+      }
+
+      if (queueStats.ip.waiting >= env.queue.maxPerIp) {
+        return res.status(429).json({
+          ok: false,
+          queued: false,
+          code: "queue_ip_full",
+          message: "A fila deste acesso está cheia. Aguarde uma tentativa expirar.",
+          queue: queueStats
+        });
+      }
+
+      const ticket = await createQueueTicket({
+        method,
+        ipHash,
+        phone,
+        phoneMasked
+      });
+
+      const stats = await getQueueStats(ipHash, ticket.id);
+
+      return res.status(202).json({
+        ok: true,
+        queued: true,
+        ticketId: ticket.id,
+        pollUrl: `/api/queue/${ticket.id}/status`,
+        queue: stats,
+        message: "Você entrou na fila de conexão."
+      });
+    }
+
+    if (noIpSlot) {
+      return res.status(429).json({
+        ok: false,
+        code: "active_session_exists",
+        message: "Já existe uma conexão em andamento neste acesso. Aguarde finalizar ou expirar."
+      });
+    }
+
+    if (noGlobalSlot) {
+      return res.status(503).json({
+        ok: false,
+        code: "server_busy",
+        message: "Muitas conexões acontecendo agora. Tente novamente em alguns minutos."
+      });
+    }
+
+    const session = await startRealSession({
       method,
       ipHash,
+      phone,
       phoneMasked
     });
 
-    startBaileysSession({
-      session,
-      phone
-    }).catch(async () => {
-      await updateSession(session.id, {
-        status: SESSION_STATUS.FAILED,
-        error: "Falha ao iniciar conexão."
-      });
-    });
-
-    res.status(201).json({
-      ok: true,
-      sessionId: session.id,
-      status: session.status,
-      eventUrl: `/api/sessions/${session.id}/events`,
-      message: "Conexão temporária criada."
-    });
+    res.status(201).json(sessionStartPayload(session));
   } catch (error) {
     next(error);
   }
+});
+
+apiRouter.get("/queue/:ticketId/status", async (req, res, next) => {
+  try {
+    const ipHash = clientHash(req);
+    const ticket = await getQueueTicket(req.params.ticketId);
+
+    if (!ticket || ticket.ipHash !== ipHash) {
+      return res.status(404).json({
+        ok: false,
+        queued: false,
+        code: "queue_not_found",
+        message: "Sua fila expirou ou não foi encontrada."
+      });
+    }
+
+    const { allowed, stats } = await canStartQueuedTicket(ticket, ipHash);
+
+    if (!allowed) {
+      return res.json({
+        ok: true,
+        queued: true,
+        ticketId: ticket.id,
+        queue: stats,
+        pollSeconds: env.queue.pollSeconds,
+        message: "Você ainda está na fila."
+      });
+    }
+
+    await removeQueueTicket(ticket.id);
+
+    const session = await startRealSession({
+      method: ticket.method,
+      ipHash,
+      phone: ticket.phone,
+      phoneMasked: ticket.phoneMasked
+    });
+
+    res.json(sessionStartPayload(session, "Sua vaga foi liberada."));
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.delete("/queue/:ticketId", async (req, res) => {
+  const ipHash = clientHash(req);
+  const ticket = await getQueueTicket(req.params.ticketId);
+
+  if (ticket && ticket.ipHash === ipHash) {
+    await removeQueueTicket(ticket.id);
+  }
+
+  res.json({
+    ok: true
+  });
 });
 
 apiRouter.get("/sessions/:sessionId/events", async (req, res) => {
@@ -253,9 +389,7 @@ apiRouter.get("/sessions/:sessionId/download", async (req, res) => {
     });
   }
 
-  res.download(session.zipPath, session.downloadName || "session.zip", async (error) => {
-    if (error) return;
-
+  if (session.downloadExpiresAt && session.downloadExpiresAt < Date.now()) {
     await removeSessionFiles(session.id);
     await updateSession(session.id, {
       status: SESSION_STATUS.CLEANED,
@@ -267,5 +401,13 @@ apiRouter.get("/sessions/:sessionId/download", async (req, res) => {
       downloadUrl: null,
       downloadName: null
     });
-  });
+
+    return res.status(410).json({
+      ok: false,
+      code: "download_expired",
+      message: "Link de download expirado. Gere uma nova sessão."
+    });
+  }
+
+  res.download(session.zipPath, session.downloadName || "session.zip");
 });

@@ -58,3 +58,28 @@ export async function zipDirectory(sourceDir, outputPath) {
     archive.finalize();
   });
 }
+
+export async function zipCredsOnly(authDir, outputPath) {
+  const credsPath = path.join(authDir, "creds.json");
+
+  await fsp.access(credsPath);
+  await fsp.mkdir(path.dirname(outputPath), { recursive: true });
+  await fsp.rm(outputPath, { force: true });
+
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(outputPath);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+
+    output.on("close", () => resolve({
+      outputPath,
+      size: archive.pointer()
+    }));
+
+    archive.on("error", reject);
+
+    archive.pipe(output);
+    archive.file(credsPath, { name: "creds.json" });
+    archive.finalize();
+  });
+}
+

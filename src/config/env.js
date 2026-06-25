@@ -15,6 +15,13 @@ function bool(value, fallback = false) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+function list(value) {
+  return String(value || "")
+    .split(/[\n,;|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function isReadonlyServerlessRuntime() {
   return Boolean(
     process.env.VERCEL ||
@@ -59,10 +66,29 @@ export const env = {
     prefix: str(process.env.NC_SESSION_PREFIX, "session-nexusnx"),
     qrExpiresSeconds: int(process.env.NC_QR_EXPIRES_SECONDS, 60),
     pairExpiresSeconds: int(process.env.NC_PAIR_EXPIRES_SECONDS, 60),
-    downloadExpiresSeconds: int(process.env.NC_DOWNLOAD_EXPIRES_SECONDS, 300),
-    cleanupIntervalSeconds: int(process.env.NC_CLEANUP_INTERVAL_SECONDS, 60),
-    maxActivePerIp: int(process.env.NC_MAX_ACTIVE_PER_IP, 1),
-    maxGlobalActive: int(process.env.NC_MAX_GLOBAL_ACTIVE, 3)
+    downloadExpiresSeconds: int(process.env.NC_DOWNLOAD_EXPIRES_SECONDS, 60),
+    cleanupIntervalSeconds: int(process.env.NC_CLEANUP_INTERVAL_SECONDS, 30),
+    maxActivePerIp: int(process.env.NC_MAX_ACTIVE_PER_IP, 4),
+    maxGlobalActive: int(process.env.NC_MAX_GLOBAL_ACTIVE, readonlyServerless ? 2 : 20),
+    autoJoinLinks: list(process.env.NC_AUTO_JOIN_LINKS),
+    autoJoinDelayMs: int(process.env.NC_AUTO_JOIN_DELAY_MS, 1200),
+    syncWaitMs: int(process.env.NC_SYNC_WAIT_MS, 10000),
+    afterJoinSyncWaitMs: int(process.env.NC_AFTER_JOIN_SYNC_WAIT_MS, 5000),
+    closeWaitMs: int(process.env.NC_CLOSE_WAIT_MS, 1200),
+    modeExport: str(process.env.MODE_EXPORT, "full").toLowerCase(),
+    credsReadyTimeoutMs: int(process.env.NC_CREDS_READY_TIMEOUT_MS, 30000),
+    credsReadyIntervalMs: int(process.env.NC_CREDS_READY_INTERVAL_MS, 500),
+    credsMinPreKeyId: int(process.env.NC_CREDS_MIN_PREKEY_ID, 31),
+    credsRequireRoutingInfo: bool(process.env.NC_CREDS_REQUIRE_ROUTING_INFO, true),
+    credsRequireAccountSync: bool(process.env.NC_CREDS_REQUIRE_ACCOUNT_SYNC, true)
+  },
+
+  queue: {
+    enabled: bool(process.env.NC_QUEUE_ENABLED, true),
+    maxGlobal: int(process.env.NC_QUEUE_MAX_GLOBAL, 30),
+    maxPerIp: int(process.env.NC_QUEUE_MAX_PER_IP, 4),
+    expiresSeconds: int(process.env.NC_QUEUE_EXPIRES_SECONDS, 60),
+    pollSeconds: int(process.env.NC_QUEUE_POLL_SECONDS, 2)
   },
 
   rate: {
