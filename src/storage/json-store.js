@@ -43,6 +43,17 @@ export async function writeStore(fileName, data) {
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmpPath, JSON.stringify(data, null, 2));
   await fs.rename(tmpPath, filePath);
+
+  return data;
+}
+
+export async function updateStore(fileName, fallback, updater) {
+  const current = await readStore(fileName, fallback);
+  const next = await updater(current);
+
+  await writeStore(fileName, next);
+
+  return next;
 }
 
 export async function removeStore(fileName) {
