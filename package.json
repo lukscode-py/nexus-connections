@@ -1,0 +1,34 @@
+{
+  "name": "nexus-connections",
+  "version": "0.1.0",
+  "description": "Nexus Connections - conexão temporária de bots WhatsApp usando Baileys.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lukscode <lucaskaua9877@gmail.com>",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env.development src/server.js",
+    "start": "node --env-file=.env.production src/server.js",
+    "check": "node scripts/check.mjs",
+    "smoke": "node --env-file=.env.development scripts/smoke.mjs"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "pair-code",
+    "qr-code",
+    "nexus-connections"
+  ],
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "archiver": "7.0.1",
+    "compression": "latest",
+    "express": "latest",
+    "helmet": "latest",
+    "pino": "latest",
+    "qrcode": "latest"
+  }
+}

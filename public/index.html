@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Conecte seu bot de forma simples com a Nexus Connections.">
+  <title>Nexus Connections</title>
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body>
+  <div class="page-glow glow-a"></div>
+  <div class="page-glow glow-b"></div>
+
+  <header class="topbar">
+    <a class="brand brand-text-logo" href="#inicio" aria-label="Nexus Connections">
+      <span class="brand-copy">
+        <strong>Nexus Connections</strong>
+        <small>Conecte seu bot de forma simples com a Nexus Connections</small>
+      </span>
+    </a>
+
+    <div class="theme-dropdown">
+      <button
+        id="themeToggle"
+        class="icon-control"
+        type="button"
+        aria-label="Abrir opções de tema"
+        aria-expanded="false"
+        aria-controls="themeMenu"
+      >
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 2v14a7 7 0 0 1 0-14Z"></path>
+        </svg>
+      </button>
+
+      <div id="themeMenu" class="theme-menu" hidden>
+        <button type="button" data-set-theme="system">Sistema</button>
+        <button type="button" data-set-theme="dark">Escuro</button>
+        <button type="button" data-set-theme="light">Claro</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="shell-card">
+      <div id="statusPanel" class="status-panel">
+        <span class="status-dot"></span>
+        <span>Pronto para iniciar</span>
+      </div>
+
+      <div id="view"></div>
+    </section>
+  </main>
+
+  <script src="/assets/js/app.js" defer></script>
+</body>
+</html>
